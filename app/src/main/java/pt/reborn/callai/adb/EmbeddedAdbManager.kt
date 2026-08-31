@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Base64
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
+import io.github.muntashirakon.adb.AdbStream
 import org.bouncycastle.asn1.x509.X509Name
 import org.bouncycastle.x509.X509V3CertificateGenerator
 import java.io.File
@@ -24,9 +25,6 @@ import java.util.concurrent.TimeUnit
  * Android Wireless Debugging remembers the client key. Keeping the same RSA key/certificate lets
  * the app reconnect after process death/reboot without a computer. The first pairing still requires
  * the user to enter the six-digit pairing code shown by Android.
- *
- * Architecture inspired by CallVault's embedded-ADB transport; implementation is kept small here so
- * we can validate the S26 path before bringing over the recorder daemon/handoff layer.
  */
 class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectionManager() {
 
@@ -60,6 +58,21 @@ class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectio
             "Código de pairing deve ter 6 dígitos"
         }
         return pair("127.0.0.1", port, pairingCode)
+    }
+
+    /**
+     * Reconnects to the already-paired Wireless Debugging service. libadb performs the TLS/mDNS
+     * discovery on-device, so the user does not have to type the connect port every time.
+     */
+    fun ensureConnected(): Boolean {
+        if (isConnected) return true
+        return runCatching { autoConnect(appContext, 15_000) }.getOrDefault(false)
+    }
+
+    /** Open a long-lived shell command. Keep the returned stream open while the daemon is needed. */
+    fun openShell(command: String): AdbStream {
+        check(isConnected) { "ADB não ligado" }
+        return openStream("shell:$command")
     }
 
     companion object {
