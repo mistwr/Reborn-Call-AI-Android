@@ -2,16 +2,35 @@ package pt.reborn.callai.agent
 
 import android.util.Log
 import pt.reborn.callai.audio.PcmFrame
+import pt.reborn.callai.audio.StereoChannelSplitter
 
 class RebornVoicePipeline {
 
+    private val splitter = StereoChannelSplitter()
+
+    @Volatile var lastLeftMeanAbs: Double = 0.0
+        private set
+
+    @Volatile var lastRightMeanAbs: Double = 0.0
+        private set
+
     fun acceptRemoteAudio(frame: PcmFrame) {
-        // BUILD 2/3:
-        // 1) split remote channel when stereo capture is available
-        // 2) stream PCM to STT
-        // 3) send transcript to REBORN LLM
-        // 4) stream TTS to the uplink/output adapter
-        Log.d(TAG, "PCM ${frame.samples.size} samples @ ${frame.sampleRate}Hz ch=${frame.channels}")
+        if (frame.channels == 2) {
+            val split = splitter.split(frame) ?: return
+            lastLeftMeanAbs = split.leftMeanAbs
+            lastRightMeanAbs = split.rightMeanAbs
+
+            // Do not guess the remote side yet. First S26 call will tell us which channel is
+            // downlink/customer and we will persist that mapping for the device.
+            Log.d(
+                TAG,
+                "VOICE_CALL stereo ${frame.sampleRate}Hz L=${"%.1f".format(split.leftMeanAbs)} R=${"%.1f".format(split.rightMeanAbs)}"
+            )
+            return
+        }
+
+        Log.d(TAG, "VOICE_CALL mono ${frame.samples.size} samples @ ${frame.sampleRate}Hz")
+        // Next stage: stream the verified remote/customer mono PCM into STT.
     }
 
     companion object {
