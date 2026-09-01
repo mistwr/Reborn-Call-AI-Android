@@ -59,7 +59,7 @@ class ShellCaptureBridge(
     private fun runBridge() {
         try {
             val listener = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).also {
-                soTimeout = 20_000
+                it.soTimeout = 20_000
                 serverSocket = it
             }
             val port = listener.localPort
