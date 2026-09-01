@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
 import android.widget.Button
@@ -19,8 +21,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pt.reborn.callai.adb.EmbeddedAdbManager
 import pt.reborn.callai.call.CallSessionService
+import pt.reborn.callai.telemetry.BridgeTelemetry
 
 class MainActivity : AppCompatActivity() {
+
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var telemetry: TextView
+    private val telemetryTicker = object : Runnable {
+        override fun run() {
+            if (::telemetry.isInitialized) telemetry.text = "DIAGNÓSTICO AO VIVO\n\n${BridgeTelemetry.render()}"
+            handler.postDelayed(this, 500)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +41,12 @@ class MainActivity : AppCompatActivity() {
             text = "REBORN CALL AI\n\nEmbedded ADB + GSM PCM bridge\n\n1. Autoriza permissões\n2. Mantém REBORN + Wireless debugging em ecrã dividido\n3. Abre Sincronize dispositivo com código\n4. Introduz apenas a porta e o código enquanto a janela continua aberta"
             textSize = 18f
             setPadding(32, 48, 32, 32)
+        }
+
+        telemetry = TextView(this).apply {
+            text = "DIAGNÓSTICO AO VIVO\n\nADB: WAITING\nDAEMON: WAITING\nVOICE_CALL PCM: WAITING"
+            textSize = 16f
+            setPadding(32, 24, 32, 24)
         }
 
         val permissions = Button(this).apply {
@@ -85,11 +103,12 @@ class MainActivity : AppCompatActivity() {
             text = "Iniciar REBORN Bridge"
             setOnClickListener {
                 if (hasCorePermissions()) {
+                    BridgeTelemetry.reset()
                     ContextCompat.startForegroundService(
                         this@MainActivity,
                         Intent(this@MainActivity, CallSessionService::class.java)
                     )
-                    status.text = "REBORN Bridge ● ATIVO\n\nADB transport preparado. À espera da ligação do daemon VOICE_CALL PCM."
+                    status.text = "REBORN Bridge ● ATIVO\n\nVê o diagnóstico ao vivo abaixo."
                 } else {
                     requestRuntimePermissions()
                 }
@@ -106,9 +125,16 @@ class MainActivity : AppCompatActivity() {
             addView(pairingCode)
             addView(pairButton)
             addView(startBridge)
+            addView(telemetry)
         }
 
         setContentView(layout)
+        handler.post(telemetryTicker)
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(telemetryTicker)
+        super.onDestroy()
     }
 
     private fun hasCorePermissions(): Boolean =
