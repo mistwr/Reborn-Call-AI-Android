@@ -69,7 +69,7 @@ class RebornSamsungAccessibilityService : AccessibilityService() {
             val text = SamsungTextBridge.takePending() ?: return
             val ok = runCatching { service.tryInjectAndSend(text) }.getOrDefault(false)
             SamsungTextBridge.lastResult = if (ok) "SENT_TO_SAMSUNG" else "SAMSUNG_FIELD_NOT_FOUND"
-            if (!ok) SamsungTextBridge.queue(text)
+            if (!ok) SamsungTextBridge.restorePending(text)
         }
     }
 }
