@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reborn_accessibility_description">Permite ao REBORN escrever respostas no modo de texto durante chamadas e acionar o envio quando o utilizador ativa esse modo.</string>
+</resources>
