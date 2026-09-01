@@ -9,6 +9,7 @@ object BridgeTelemetry {
     @Volatile var leftLevel: Double = 0.0
     @Volatile var rightLevel: Double = 0.0
     @Volatile var frames: Long = 0
+    @Volatile var callState: String = "IDLE"
     @Volatile var lastError: String? = null
 
     fun reset() {
@@ -24,6 +25,7 @@ object BridgeTelemetry {
     }
 
     fun render(): String = buildString {
+        append("CALL: ").append(callState).append('\n')
         append("ADB: ").append(if (adbConnected) "CONNECTED" else "WAITING").append('\n')
         append("DAEMON: ").append(if (daemonStarted) "STARTED" else "WAITING").append('\n')
         append("VOICE_CALL PCM: ").append(if (pcmActive) "ACTIVE" else "WAITING").append('\n')
