@@ -5,6 +5,7 @@ import android.util.Log
 import io.github.muntashirakon.adb.AdbStream
 import pt.reborn.callai.adb.EmbeddedAdbManager
 import pt.reborn.callai.audio.PcmFrame
+import pt.reborn.callai.telemetry.BridgeTelemetry
 import java.io.BufferedInputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -12,16 +13,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Digital GSM capture bridge.
- *
- * The normal app opens a loopback TCP listener. A shell-uid app_process daemon is then launched via
- * the already-paired embedded ADB connection. The daemon owns AudioRecord(VOICE_CALL) and streams
- * PCM16LE back to this process over 127.0.0.1.
- *
- * There is deliberately NO microphone fallback: if privileged VOICE_CALL cannot be opened, capture
- * fails visibly instead of silently transcribing speakerphone audio.
- */
+/** Digital GSM capture bridge. No microphone fallback. */
 class ShellCaptureBridge(
     private val context: Context,
 ) : CallAudioCapture {
@@ -52,7 +44,7 @@ class ShellCaptureBridge(
         channels = 0
         stopRequested.set(false)
         isRunning = true
-
+        BridgeTelemetry.reset()
         worker = Thread({ runBridge() }, "reborn-call-capture").also { it.start() }
     }
 
@@ -68,12 +60,14 @@ class ShellCaptureBridge(
             check(adb.ensureConnected()) {
                 "ADB local não ligado. Faz primeiro o pairing em Wireless Debugging."
             }
+            BridgeTelemetry.adbConnected = true
 
             val apk = context.applicationInfo.sourceDir
             val fqcn = "pt.reborn.callai.daemon.RebornPcmDaemon"
             val command = "CLASSPATH='$apk' exec app_process / $fqcn $port"
             Log.i(TAG, "Launching shell PCM daemon on loopback port $port")
             adbStream = adb.openShell(command)
+            BridgeTelemetry.daemonStarted = true
 
             listener.accept().use { socket ->
                 socket.tcpNoDelay = true
@@ -89,6 +83,9 @@ class ShellCaptureBridge(
                 check(sampleRate > 0 && channels in 1..2) {
                     "Formato PCM inválido: $sampleRate Hz / $channels canais"
                 }
+                BridgeTelemetry.sampleRate = sampleRate
+                BridgeTelemetry.channels = channels
+                BridgeTelemetry.pcmActive = true
                 Log.i(TAG, "VOICE_CALL PCM active: ${sampleRate}Hz, ${channels}ch")
 
                 val frameSamples = 960 * channels
@@ -103,12 +100,14 @@ class ShellCaptureBridge(
                         .order(ByteOrder.LITTLE_ENDIAN)
                         .asShortBuffer()
                         .get(shorts)
+                    BridgeTelemetry.frames++
                     sink?.invoke(PcmFrame(shorts, sampleRate, channels))
                 }
             }
         } catch (t: Throwable) {
             if (!stopRequested.get()) {
                 lastError = t.message ?: t.javaClass.simpleName
+                BridgeTelemetry.lastError = lastError
                 Log.e(TAG, "Digital VOICE_CALL capture failed", t)
             }
         } finally {
