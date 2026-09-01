@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val status = TextView(this).apply {
-            text = "REBORN CALL AI\n\nBUILD 2\nEmbedded ADB + GSM PCM bridge\n\n1. Autoriza permissões\n2. Abre Wireless debugging > Pair device with pairing code\n3. Introduz a porta e o código abaixo"
+            text = "REBORN CALL AI\n\nEmbedded ADB + GSM PCM bridge\n\n1. Autoriza permissões\n2. Abre Wireless debugging > Sincronize dispositivo com código\n3. Introduz IP, porta e código mostrados pelo Android"
             textSize = 18f
             setPadding(32, 48, 32, 32)
         }
@@ -43,8 +43,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val pairingHost = EditText(this).apply {
+            hint = "IP do S26 (ex: 192.168.1.234)"
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+
         val pairingPort = EditText(this).apply {
-            hint = "Porta de pairing (ex: 37123)"
+            hint = "Porta de pairing (ex: 40771)"
             inputType = InputType.TYPE_CLASS_NUMBER
         }
 
@@ -56,26 +61,27 @@ class MainActivity : AppCompatActivity() {
         val pairButton = Button(this).apply {
             text = "Emparelhar REBORN com o próprio S26"
             setOnClickListener {
+                val host = pairingHost.text.toString().trim()
                 val port = pairingPort.text.toString().toIntOrNull()
                 val code = pairingCode.text.toString().trim()
-                if (port == null || code.length != 6) {
-                    status.text = "Pairing: introduz a porta e o código de 6 dígitos mostrados pelo Android."
+                if (host.isBlank() || port == null || code.length != 6) {
+                    status.text = "Pairing: introduz IP, porta e código de 6 dígitos mostrados pelo Android."
                     return@setOnClickListener
                 }
 
                 isEnabled = false
-                status.text = "Pairing ADB local em curso…"
+                status.text = "Pairing ADB com $host:$port em curso…"
                 lifecycleScope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
-                            EmbeddedAdbManager.get(applicationContext).pairLocal(port, code)
+                            EmbeddedAdbManager.get(applicationContext).pairLocal(host, port, code)
                         }
                     }
                     isEnabled = true
                     status.text = if (result.getOrDefault(false)) {
-                        "ADB LOCAL ● EMPARELHADO\n\nPróximo: arrancar daemon shell uid 2000 e pedir VOICE_CALL PCM."
+                        "ADB ● EMPARELHADO\n\nPróximo: iniciar REBORN Bridge e testar VOICE_CALL PCM."
                     } else {
-                        "ADB pairing falhou: ${result.exceptionOrNull()?.message ?: "código/porta recusados"}\n\nGera um código novo em Wireless debugging e tenta novamente."
+                        "ADB pairing falhou: ${result.exceptionOrNull()?.message ?: "código/porta recusados"}\n\nConfirma o IP mostrado em Wireless debugging e gera um código novo."
                     }
                 }
             }
@@ -102,6 +108,7 @@ class MainActivity : AppCompatActivity() {
             addView(status)
             addView(permissions)
             addView(wirelessDebug)
+            addView(pairingHost)
             addView(pairingPort)
             addView(pairingCode)
             addView(pairButton)
