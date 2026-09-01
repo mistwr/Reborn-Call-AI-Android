@@ -19,13 +19,6 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
-/**
- * Persistent ADB client identity for REBORN.
- *
- * Android Wireless Debugging remembers the client key. Keeping the same RSA key/certificate lets
- * the app reconnect after process death/reboot without a computer. The first pairing still requires
- * the user to enter the six-digit pairing code shown by Android.
- */
 class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectionManager() {
 
     private val appContext = context.applicationContext
@@ -52,24 +45,22 @@ class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectio
     override fun getCertificate(): Certificate = cert
     override fun getDeviceName(): String = DEVICE_NAME
 
-    fun pairLocal(port: Int, pairingCode: String): Boolean {
+    fun pairLocal(host: String, port: Int, pairingCode: String): Boolean {
+        require(host.isNotBlank()) { "Endereço IP ADB inválido" }
         require(port in 1..65535) { "Porta ADB inválida" }
         require(pairingCode.length == 6 && pairingCode.all(Char::isDigit)) {
             "Código de pairing deve ter 6 dígitos"
         }
-        return pair("127.0.0.1", port, pairingCode)
+        // Samsung's TLS pairing listener is advertised on the Wi-Fi interface address.
+        // Pairing against 127.0.0.1 can be refused even when Wireless Debugging is enabled.
+        return pair(host.trim(), port, pairingCode)
     }
 
-    /**
-     * Reconnects to the already-paired Wireless Debugging service. libadb performs the TLS/mDNS
-     * discovery on-device, so the user does not have to type the connect port every time.
-     */
     fun ensureConnected(): Boolean {
         if (isConnected) return true
         return runCatching { autoConnect(appContext, 15_000) }.getOrDefault(false)
     }
 
-    /** Open a long-lived shell command. Keep the returned stream open while the daemon is needed. */
     fun openShell(command: String): AdbStream {
         check(isConnected) { "ADB não ligado" }
         return openStream("shell:$command")
