@@ -26,6 +26,10 @@ object SamsungTextBridge {
         return value
     }
 
+    internal fun restorePending(text: String) {
+        lastQueuedText = text
+    }
+
     fun openAccessibilitySettings(context: Context) {
         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
