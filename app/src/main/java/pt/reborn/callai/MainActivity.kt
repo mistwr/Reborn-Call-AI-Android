@@ -31,6 +31,7 @@ import pt.reborn.callai.backend.RebornBackend
 import pt.reborn.callai.call.CallSessionService
 import pt.reborn.callai.dialer.ActiveCallStore
 import pt.reborn.callai.dialer.DialerRoleHelper
+import pt.reborn.callai.samsung.SamsungTextBridge
 import pt.reborn.callai.telemetry.BridgeTelemetry
 
 class MainActivity : AppCompatActivity() {
@@ -92,11 +93,7 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(action("📞 LIGAR COM REBORN AI") {
             val phone = number.text.toString().trim()
-            if (phone.isBlank()) {
-                status.text = "Introduz um número para ligar."
-            } else {
-                placePhoneCall(phone)
-            }
+            if (phone.isBlank()) status.text = "Introduz um número para ligar." else placePhoneCall(phone)
         })
 
         val callControls = LinearLayout(this).apply {
@@ -119,7 +116,57 @@ class MainActivity : AppCompatActivity() {
         root.addView(section("CAMPANHA ATIVA"))
         root.addView(title(campaign.name, 19f))
         root.addView(body(campaign.opening, 16f))
-        root.addView(body("Resposta positiva: a IA marca a chamada como LEAD QUENTE e envia o contacto para SD Dialer/Supabase. O backend pode replicar o evento para Indigo e MY POUPar+.", 14f))
+        root.addView(body("Resposta positiva: a IA marca a chamada como LEAD QUENTE e envia o contacto para SD Dialer/Supabase.", 14f))
+
+        root.addView(section("CÉREBRO IA → SAMSUNG"))
+        root.addView(body("Teste fechado: escreves como se fosse o cliente, o REBORN pergunta ao LLM e envia a resposta para o modo de texto da Samsung.", 14f))
+        root.addView(action("ATIVAR PONTE SAMSUNG EM ACESSIBILIDADE") {
+            SamsungTextBridge.openAccessibilitySettings(this)
+        })
+
+        val customerText = EditText(this).apply {
+            hint = "Ex.: Sim, diga. Tenho MEO e pago 45 euros."
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+        }
+        root.addView(customerText)
+
+        val agentKey = EditText(this).apply {
+            hint = "REBORN Agent Key (opcional em dev)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(backend.getAgentKey())
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+        }
+        root.addView(agentKey)
+
+        root.addView(action("🤖 IA RESPONDE → SAMSUNG FALA") {
+            val text = customerText.text.toString().trim()
+            if (text.isBlank()) {
+                status.text = "Escreve primeiro uma frase do cliente."
+                return@action
+            }
+            backend.saveAgentKey(agentKey.text.toString())
+            lifecycleScope.launch {
+                status.text = "REBORN a pensar…"
+                val result = withContext(Dispatchers.IO) {
+                    backend.askAgent(text, campaign = campaign.name)
+                }
+                result.onSuccess { reply ->
+                    status.text = "REBORN: $reply\nSamsung: ${SamsungTextBridge.lastResult}"
+                    SamsungTextBridge.queue(reply)
+                }.onFailure {
+                    status.text = "Falha no cérebro REBORN: ${it.message}"
+                }
+            }
+        })
+
+        root.addView(action("🗣 TESTAR TEXTO DIRETO NA SAMSUNG") {
+            val text = customerText.text.toString().trim().ifBlank { "Olá, este é um teste do REBORN AI Call." }
+            SamsungTextBridge.queue(text)
+            status.text = "Texto enviado para a ponte Samsung: ${SamsungTextBridge.lastResult}"
+        })
 
         root.addView(action("🔥 TESTAR LEAD QUENTE") {
             val phone = number.text.toString().trim()
@@ -132,11 +179,7 @@ class MainActivity : AppCompatActivity() {
                 val result = withContext(Dispatchers.IO) {
                     backend.submitHotLead(phone, campaign.id, "manual_test", "sim")
                 }
-                status.text = if (result.isSuccess) {
-                    "🔥 Lead quente enviada para o ecossistema REBORN."
-                } else {
-                    "Falha ao enviar lead: ${result.exceptionOrNull()?.message}"
-                }
+                status.text = if (result.isSuccess) "🔥 Lead quente enviada para o ecossistema REBORN." else "Falha ao enviar lead: ${result.exceptionOrNull()?.message}"
             }
         })
 
@@ -173,9 +216,7 @@ class MainActivity : AppCompatActivity() {
             }
             lifecycleScope.launch {
                 status.text = "A emparelhar ADB local…"
-                val result = withContext(Dispatchers.IO) {
-                    runCatching { adbManager.pairLocal(port, code) }
-                }
+                val result = withContext(Dispatchers.IO) { runCatching { adbManager.pairLocal(port, code) } }
                 status.text = if (result.getOrDefault(false)) "ADB LOCAL ● EMPARELHADO" else "Pairing falhou: ${result.exceptionOrNull()?.message}"
             }
         })
@@ -215,7 +256,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(telemetry)
 
         root.addView(section("FLUXO AUTOMÁTICO"))
-        root.addView(body("1. REBORN liga pelo SIM\n2. Voice Caller apresenta a MY POUPar+\n3. PCM digital → STT → REBORN Agent\n4. Cliente diz “sim” ou marca 1\n5. Lead passa a HOT no SD Dialer/Supabase\n6. Indigo e MY POUPar+ recebem o evento\n7. Gestor humano recebe a lead quente\n8. Futuro: TTS da IA injetado diretamente no uplink GSM", 15f))
+        root.addView(body("1. REBORN liga pelo SIM\n2. PCM digital capta o cliente\n3. STT transforma voz em texto\n4. REBORN Agent responde\n5. Samsung Text Bridge escreve a resposta\n6. Samsung fala para o cliente\n7. HOT lead segue para SD Dialer/Supabase", 15f))
 
         val scroll = ScrollView(this).apply { addView(root) }
         setContentView(scroll)
@@ -234,8 +275,7 @@ class MainActivity : AppCompatActivity() {
         }
         val uri = Uri.parse("tel:$phone")
         if (DialerRoleHelper.isDefaultDialer(this)) {
-            val telecom = getSystemService(TelecomManager::class.java)
-            telecom.placeCall(uri, Bundle())
+            getSystemService(TelecomManager::class.java).placeCall(uri, Bundle())
         } else {
             startActivity(Intent(Intent.ACTION_CALL, uri))
         }
