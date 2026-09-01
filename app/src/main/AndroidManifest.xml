@@ -53,6 +53,18 @@
         </service>
 
         <service
+            android:name=".samsung.RebornSamsungAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/reborn_accessibility_service" />
+        </service>
+
+        <service
             android:name=".call.CallSessionService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
