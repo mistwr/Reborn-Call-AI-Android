@@ -3,6 +3,7 @@ package pt.reborn.callai.agent
 import android.util.Log
 import pt.reborn.callai.audio.PcmFrame
 import pt.reborn.callai.audio.StereoChannelSplitter
+import pt.reborn.callai.telemetry.BridgeTelemetry
 
 class RebornVoicePipeline {
 
@@ -19,9 +20,8 @@ class RebornVoicePipeline {
             val split = splitter.split(frame) ?: return
             lastLeftMeanAbs = split.leftMeanAbs
             lastRightMeanAbs = split.rightMeanAbs
-
-            // Do not guess the remote side yet. First S26 call will tell us which channel is
-            // downlink/customer and we will persist that mapping for the device.
+            BridgeTelemetry.leftLevel = split.leftMeanAbs
+            BridgeTelemetry.rightLevel = split.rightMeanAbs
             Log.d(
                 TAG,
                 "VOICE_CALL stereo ${frame.sampleRate}Hz L=${"%.1f".format(split.leftMeanAbs)} R=${"%.1f".format(split.rightMeanAbs)}"
@@ -29,8 +29,9 @@ class RebornVoicePipeline {
             return
         }
 
-        Log.d(TAG, "VOICE_CALL mono ${frame.samples.size} samples @ ${frame.sampleRate}Hz")
-        // Next stage: stream the verified remote/customer mono PCM into STT.
+        val mean = if (frame.samples.isEmpty()) 0.0 else frame.samples.sumOf { kotlin.math.abs(it.toInt()).toLong() }.toDouble() / frame.samples.size
+        BridgeTelemetry.leftLevel = mean
+        Log.d(TAG, "VOICE_CALL mono ${frame.samples.size} samples @ ${frame.sampleRate}Hz mean=${"%.1f".format(mean)}")
     }
 
     companion object {
