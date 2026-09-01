@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
 class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectionManager() {
 
     private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val key: PrivateKey
     private val cert: Certificate
 
@@ -50,13 +51,31 @@ class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectio
         require(pairingCode.length == 6 && pairingCode.all(Char::isDigit)) {
             "Código de pairing deve ter 6 dígitos"
         }
-        // The Android Wireless Debugging pairing service is reached locally on the same device.
-        // CallVault uses this exact transport: pair("127.0.0.1", port, code).
         return pair("127.0.0.1", port, pairingCode)
     }
 
+    fun saveConnectEndpoint(host: String, port: Int) {
+        require(host.isNotBlank()) { "IP ADB inválido" }
+        require(port in 1..65535) { "Porta ADB normal inválida" }
+        prefs.edit()
+            .putString(KEY_CONNECT_HOST, host.trim())
+            .putInt(KEY_CONNECT_PORT, port)
+            .apply()
+    }
+
+    fun savedConnectHost(): String = prefs.getString(KEY_CONNECT_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
+    fun savedConnectPort(): Int = prefs.getInt(KEY_CONNECT_PORT, 0)
+
     fun ensureConnected(): Boolean {
         if (isConnected) return true
+
+        val host = savedConnectHost()
+        val port = savedConnectPort()
+        if (port in 1..65535) {
+            val direct = runCatching { connect(host, port) }.getOrDefault(false)
+            if (direct) return true
+        }
+
         return runCatching { autoConnect(appContext, 15_000) }.getOrDefault(false)
     }
 
@@ -71,6 +90,10 @@ class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectio
         private const val CERT_FILE = "reborn_adbkey.pem"
         private const val SUBJECT = "CN=REBORN Call AI"
         private const val VALIDITY_MS = 10L * 365L * 24L * 60L * 60L * 1000L
+        private const val PREFS = "reborn_adb"
+        private const val KEY_CONNECT_HOST = "connect_host"
+        private const val KEY_CONNECT_PORT = "connect_port"
+        private const val DEFAULT_HOST = "192.168.1.234"
 
         @Volatile private var instance: EmbeddedAdbManager? = null
 
