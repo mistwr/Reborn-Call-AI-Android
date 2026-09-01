@@ -45,15 +45,14 @@ class EmbeddedAdbManager private constructor(context: Context) : AbsAdbConnectio
     override fun getCertificate(): Certificate = cert
     override fun getDeviceName(): String = DEVICE_NAME
 
-    fun pairLocal(host: String, port: Int, pairingCode: String): Boolean {
-        require(host.isNotBlank()) { "Endereço IP ADB inválido" }
+    fun pairLocal(port: Int, pairingCode: String): Boolean {
         require(port in 1..65535) { "Porta ADB inválida" }
         require(pairingCode.length == 6 && pairingCode.all(Char::isDigit)) {
             "Código de pairing deve ter 6 dígitos"
         }
-        // Samsung's TLS pairing listener is advertised on the Wi-Fi interface address.
-        // Pairing against 127.0.0.1 can be refused even when Wireless Debugging is enabled.
-        return pair(host.trim(), port, pairingCode)
+        // The Android Wireless Debugging pairing service is reached locally on the same device.
+        // CallVault uses this exact transport: pair("127.0.0.1", port, code).
+        return pair("127.0.0.1", port, pairingCode)
     }
 
     fun ensureConnected(): Boolean {
