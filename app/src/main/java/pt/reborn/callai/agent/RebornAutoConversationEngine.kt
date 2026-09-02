@@ -23,11 +23,12 @@ class RebornAutoConversationEngine(context: Context) {
     private var lastTranscript = ""
     private val history = ArrayList<Pair<String, String>>()
 
-    fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
+    fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, true)
 
     fun setEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
         BridgeTelemetry.autoConversation = enabled
+        BridgeTelemetry.conversationState = if (enabled) "WAITING" else "OFF"
         if (!enabled) resetTurn()
     }
 
@@ -52,7 +53,10 @@ class RebornAutoConversationEngine(context: Context) {
         val speechNow = mean >= SPEECH_THRESHOLD
 
         if (!speaking) {
-            if (!speechNow) return
+            if (!speechNow) {
+                if (BridgeTelemetry.conversationState == "OFF") BridgeTelemetry.conversationState = "WAITING"
+                return
+            }
             speaking = true
             silenceSamples = 0
             speechBuffer.clear()
