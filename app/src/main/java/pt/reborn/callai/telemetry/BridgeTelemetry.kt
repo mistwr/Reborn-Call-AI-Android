@@ -10,6 +10,11 @@ object BridgeTelemetry {
     @Volatile var rightLevel: Double = 0.0
     @Volatile var frames: Long = 0
     @Volatile var callState: String = "IDLE"
+    @Volatile var autoConversation: Boolean = false
+    @Volatile var remoteChannel: String = "LEFT"
+    @Volatile var conversationState: String = "OFF"
+    @Volatile var lastTranscript: String = ""
+    @Volatile var lastAgentReply: String = ""
     @Volatile var lastError: String? = null
 
     fun reset() {
@@ -21,6 +26,8 @@ object BridgeTelemetry {
         leftLevel = 0.0
         rightLevel = 0.0
         frames = 0
+        lastTranscript = ""
+        lastAgentReply = ""
         lastError = null
     }
 
@@ -37,6 +44,11 @@ object BridgeTelemetry {
                     .append("   R: ").append("%.1f".format(rightLevel)).append('\n')
             }
         }
+        append("AUTO AI: ").append(if (autoConversation) "ON" else "OFF")
+            .append(" · REMOTE=").append(remoteChannel).append('\n')
+        append("AI STATE: ").append(conversationState).append('\n')
+        if (lastTranscript.isNotBlank()) append("CLIENTE: ").append(lastTranscript).append('\n')
+        if (lastAgentReply.isNotBlank()) append("REBORN: ").append(lastAgentReply).append('\n')
         lastError?.let { append("ERROR: ").append(it) }
     }
 }
