@@ -6,24 +6,26 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import pt.reborn.callai.R
+import pt.reborn.callai.agent.RebornAutoConversationEngine
 import pt.reborn.callai.agent.RebornVoicePipeline
 import pt.reborn.callai.capture.ShellCaptureBridge
 
 class CallSessionService : Service() {
 
     private lateinit var capture: ShellCaptureBridge
+    private lateinit var autoConversation: RebornAutoConversationEngine
     private val pipeline = RebornVoicePipeline()
 
     override fun onCreate() {
         super.onCreate()
         capture = ShellCaptureBridge(this)
+        autoConversation = RebornAutoConversationEngine(this)
         createChannel()
         startForeground(
             NOTIFICATION_ID,
             NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("REBORN Call AI")
-                .setContentText("Call audio bridge ready")
+                .setContentText("PCM + IA + Samsung bridge ativos")
                 .setSmallIcon(android.R.drawable.stat_sys_phone_call)
                 .setOngoing(true)
                 .build()
@@ -32,13 +34,17 @@ class CallSessionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!capture.isRunning) {
-            capture.start(pipeline::acceptRemoteAudio)
+            capture.start { frame ->
+                pipeline.acceptRemoteAudio(frame)
+                autoConversation.accept(frame)
+            }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
         capture.stop()
+        autoConversation.shutdown()
         super.onDestroy()
     }
 
