@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 
 class RebornBackend(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -19,6 +20,40 @@ class RebornBackend(context: Context) {
 
     fun saveAgentKey(value: String) {
         prefs.edit().putString(KEY_AGENT_KEY, value.trim()).apply()
+    }
+
+    fun transcribeWav(wav: ByteArray): Result<String> = runCatching {
+        val base = getBaseUrl()
+        require(base.startsWith("https://")) { "Configura primeiro o endpoint HTTPS do REBORN/SD Dialer" }
+        require(wav.size > 44) { "Áudio WAV vazio" }
+
+        val boundary = "----Reborn${UUID.randomUUID()}"
+        val connection = (URL("$base/api/reborn/transcribe").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 10_000
+            readTimeout = 30_000
+            doOutput = true
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            setRequestProperty("Accept", "application/json")
+            val key = getAgentKey()
+            if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
+        }
+
+        connection.outputStream.use { out ->
+            out.write("--$boundary\r\n".toByteArray())
+            out.write("Content-Disposition: form-data; name=\"audio\"; filename=\"reborn-turn.wav\"\r\n".toByteArray())
+            out.write("Content-Type: audio/wav\r\n\r\n".toByteArray())
+            out.write(wav)
+            out.write("\r\n--$boundary--\r\n".toByteArray())
+        }
+
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        connection.disconnect()
+        require(code in 200..299) { "STT respondeu HTTP $code: $body" }
+
+        JSONObject(body).optString("text").trim()
     }
 
     fun askAgent(
