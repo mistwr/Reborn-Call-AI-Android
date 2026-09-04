@@ -40,14 +40,9 @@ class RebornSamsungAccessibilityService : AccessibilityService() {
         }
         if (!input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
 
-        val send = findBestSendNode(root, input)
-        if (send != null) {
-            BridgeTelemetry.samsungLastClickableId = send.viewIdResourceName.orEmpty()
-            return send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        }
-
-        // Some Samsung layouts expose an IME action rather than a labelled send button.
-        return input.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+        val send = findBestSendNode(root, input) ?: return false
+        BridgeTelemetry.samsungLastClickableId = send.viewIdResourceName.orEmpty()
+        return send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
     private fun inspectActiveWindow(event: AccessibilityEvent?) {
@@ -59,30 +54,31 @@ class RebornSamsungAccessibilityService : AccessibilityService() {
         var clickableCount = 0
         val preview = ArrayList<String>()
 
-        fun walk(node: AccessibilityNodeInfo?, depth: Int = 0) {
+        fun walk(node: AccessibilityNodeInfo?) {
             if (node == null) return
             if (node.isEditable && node.isVisibleToUser) editableCount++
             if (node.isClickable && node.isVisibleToUser) clickableCount++
 
-            if (preview.size < 24 && node.isVisibleToUser) {
+            if (preview.size < 32 && node.isVisibleToUser) {
                 val bits = listOfNotNull(
                     node.viewIdResourceName?.takeIf { it.isNotBlank() }?.let { "id=$it" },
                     node.className?.toString()?.takeIf { it.isNotBlank() }?.let { "class=${it.substringAfterLast('.')}" },
-                    node.text?.toString()?.takeIf { it.isNotBlank() }?.let { "text=${it.take(32)}" },
-                    node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { "desc=${it.take(32)}" },
+                    node.text?.toString()?.takeIf { it.isNotBlank() }?.let { "text=${it.take(40)}" },
+                    node.hintText?.toString()?.takeIf { it.isNotBlank() }?.let { "hint=${it.take(40)}" },
+                    node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { "desc=${it.take(40)}" },
                     if (node.isEditable) "editable" else null,
                     if (node.isClickable) "clickable" else null,
                 )
                 if (bits.isNotEmpty()) preview += bits.joinToString("|")
             }
 
-            for (i in 0 until node.childCount) walk(node.getChild(i), depth + 1)
+            for (i in 0 until node.childCount) walk(node.getChild(i))
         }
 
         walk(root)
         BridgeTelemetry.samsungEditableCount = editableCount
         BridgeTelemetry.samsungClickableCount = clickableCount
-        BridgeTelemetry.samsungTreePreview = preview.joinToString("  »  ").take(1400)
+        BridgeTelemetry.samsungTreePreview = preview.joinToString("  »  ").take(1800)
     }
 
     private fun findBestEditable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -114,7 +110,9 @@ class RebornSamsungAccessibilityService : AccessibilityService() {
         collect(root) { node -> if (node.isClickable && node.isVisibleToUser) candidates += node }
         if (candidates.isEmpty()) return null
 
-        return candidates.maxByOrNull { node ->
+        val inputBounds = android.graphics.Rect().also { input.getBoundsInScreen(it) }
+
+        val labelled = candidates.map { node ->
             val haystack = listOfNotNull(
                 node.viewIdResourceName,
                 node.text?.toString(),
@@ -125,21 +123,29 @@ class RebornSamsungAccessibilityService : AccessibilityService() {
             if (haystack.contains("speak") || haystack.contains("falar")) score += 90
             if (haystack.contains("voice") || haystack.contains("voz")) score += 50
             if (haystack.contains("text") || haystack.contains("message") || haystack.contains("mensagem")) score += 20
-            val inputBounds = android.graphics.Rect().also { input.getBoundsInScreen(it) }
             val nodeBounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
             val dy = kotlin.math.abs(nodeBounds.centerY() - inputBounds.centerY())
             if (dy < 180) score += 20
-            score
-        }?.takeIf { node ->
-            val haystack = listOfNotNull(
-                node.viewIdResourceName,
-                node.text?.toString(),
-                node.contentDescription?.toString(),
-            ).joinToString(" ").lowercase()
+            Triple(node, haystack, score)
+        }.filter { (_, haystack, _) ->
             haystack.contains("send") || haystack.contains("enviar") ||
                 haystack.contains("speak") || haystack.contains("falar") ||
                 haystack.contains("voice") || haystack.contains("voz")
-        }
+        }.maxByOrNull { it.third }?.first
+
+        if (labelled != null) return labelled
+
+        // Diagnostic-safe fallback: prefer a small clickable control on the same row,
+        // to the right of the text field. This covers icon-only send buttons without
+        // blindly clicking unrelated controls elsewhere on the Samsung call screen.
+        return candidates.mapNotNull { node ->
+            val r = android.graphics.Rect().also { node.getBoundsInScreen(it) }
+            val sameRow = kotlin.math.abs(r.centerY() - inputBounds.centerY()) < 140
+            val toRight = r.centerX() >= inputBounds.centerX()
+            val smallEnough = r.width() in 36..320 && r.height() in 36..320
+            if (!sameRow || !toRight || !smallEnough) null
+            else node to kotlin.math.abs(r.centerY() - inputBounds.centerY()) + kotlin.math.abs(r.left - inputBounds.right)
+        }.minByOrNull { it.second }?.first
     }
 
     private fun supportsSetText(node: AccessibilityNodeInfo): Boolean =
