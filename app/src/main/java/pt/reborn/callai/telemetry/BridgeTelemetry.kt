@@ -17,6 +17,14 @@ object BridgeTelemetry {
     @Volatile var lastAgentReply: String = ""
     @Volatile var lastError: String? = null
 
+    @Volatile var samsungPackage: String = ""
+    @Volatile var samsungWindowClass: String = ""
+    @Volatile var samsungEditableCount: Int = 0
+    @Volatile var samsungClickableCount: Int = 0
+    @Volatile var samsungLastEditableId: String = ""
+    @Volatile var samsungLastClickableId: String = ""
+    @Volatile var samsungTreePreview: String = ""
+
     fun reset() {
         adbConnected = false
         daemonStarted = false
@@ -29,6 +37,13 @@ object BridgeTelemetry {
         lastTranscript = ""
         lastAgentReply = ""
         lastError = null
+        samsungPackage = ""
+        samsungWindowClass = ""
+        samsungEditableCount = 0
+        samsungClickableCount = 0
+        samsungLastEditableId = ""
+        samsungLastClickableId = ""
+        samsungTreePreview = ""
     }
 
     fun render(): String = buildString {
@@ -49,6 +64,15 @@ object BridgeTelemetry {
         append("AI STATE: ").append(conversationState).append('\n')
         if (lastTranscript.isNotBlank()) append("CLIENTE: ").append(lastTranscript).append('\n')
         if (lastAgentReply.isNotBlank()) append("REBORN: ").append(lastAgentReply).append('\n')
+
+        append("SAMSUNG PACKAGE: ").append(samsungPackage.ifBlank { "WAITING" }).append('\n')
+        append("SAMSUNG WINDOW: ").append(samsungWindowClass.ifBlank { "WAITING" }).append('\n')
+        append("EDITABLES: ").append(samsungEditableCount)
+            .append(" · CLICKABLES: ").append(samsungClickableCount).append('\n')
+        if (samsungLastEditableId.isNotBlank()) append("EDITABLE ID: ").append(samsungLastEditableId).append('\n')
+        if (samsungLastClickableId.isNotBlank()) append("CLICK ID: ").append(samsungLastClickableId).append('\n')
+        if (samsungTreePreview.isNotBlank()) append("TREE: ").append(samsungTreePreview).append('\n')
+
         lastError?.let { append("ERROR: ").append(it) }
     }
 }
